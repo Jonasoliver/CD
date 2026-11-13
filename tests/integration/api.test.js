@@ -52,4 +52,28 @@ describe('API de tarefas', () => {
     const res = await request(app).patch('/api/tarefas/999/concluir');
     expect(res.status).toBe(404);
   });
+
+  test('DELETE remove a tarefa do banco', async () => {
+    await request(app).post('/api/tarefas').send({ titulo: 'Apagar' });
+    const res = await request(app).delete('/api/tarefas/1');
+    expect(res.status).toBe(204);
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM tarefas');
+    expect(rows[0].n).toBe(0);
+  });
+
+  test('GET /api/tarefas/busca filtra pelo título', async () => {
+    await request(app).post('/api/tarefas').send({ titulo: 'Configurar pipeline' });
+    await request(app).post('/api/tarefas').send({ titulo: 'Escrever relatório' });
+    const res = await request(app).get('/api/tarefas/busca').query({ q: 'pipe' });
+    expect(res.status).toBe(200);
+    expect(res.body.tarefas).toHaveLength(1);
+    expect(res.body.tarefas[0].titulo).toBe('Configurar pipeline');
+  });
+
+  test('busca não é vulnerável a SQL injection', async () => {
+    await request(app).post('/api/tarefas').send({ titulo: 'Tarefa A' });
+    const res = await request(app).get('/api/tarefas/busca').query({ q: "' OR '1'='1" });
+    expect(res.status).toBe(200);
+    expect(res.body.tarefas).toHaveLength(0);
+  });
 });

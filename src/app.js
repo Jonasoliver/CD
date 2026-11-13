@@ -21,6 +21,16 @@ app.get('/api/tarefas', async (req, res) => {
   res.json({ tarefas: rows, resumo: resumir(rows) });
 });
 
+// Busca tarefas pelo título (GET /api/tarefas/busca?q=texto)
+app.get('/api/tarefas/busca', async (req, res) => {
+  const termo = String(req.query.q || '');
+  // Consulta parametrizada: o termo é enviado separado do SQL, impedindo SQL injection
+  const { rows } = await pool.query('SELECT * FROM tarefas WHERE titulo ILIKE $1 ORDER BY id', [
+    `%${termo}%`,
+  ]);
+  res.json({ tarefas: rows });
+});
+
 app.post('/api/tarefas', async (req, res) => {
   const { valido, erros } = validarTarefa(req.body);
   if (!valido) {
@@ -43,6 +53,14 @@ app.patch('/api/tarefas/:id/concluir', async (req, res) => {
     return res.status(404).json({ erros: ['Tarefa não encontrada.'] });
   }
   return res.json(rows[0]);
+});
+
+app.delete('/api/tarefas/:id', async (req, res) => {
+  const resultado = await pool.query('DELETE FROM tarefas WHERE id = $1', [req.params.id]);
+  if (resultado.rowCount === 0) {
+    return res.status(404).json({ erros: ['Tarefa não encontrada.'] });
+  }
+  return res.status(204).send();
 });
 
 module.exports = app;
