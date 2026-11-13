@@ -47,7 +47,7 @@ app.patch('/api/tarefas/:id/concluir', async (req, res) => {
 
 app.delete('/api/tarefas/:id', async (req, res) => {
   const resultado = await pool.query('DELETE FROM tarefas WHERE id = $1', [req.params.id]);
-  if (resultado.rowCount == 0) {
+  if (resultado.rowCount === 0) {
     return res.status(404).json({ erros: ['Tarefa não encontrada.'] });
   }
   return res.status(204).send();
