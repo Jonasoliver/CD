@@ -24,9 +24,10 @@ app.get('/api/tarefas', async (req, res) => {
 // Busca tarefas pelo título (GET /api/tarefas/busca?q=texto)
 app.get('/api/tarefas/busca', async (req, res) => {
   const termo = String(req.query.q || '');
-  const { rows } = await pool.query(
-    "SELECT * FROM tarefas WHERE titulo ILIKE '%" + termo + "%' ORDER BY id",
-  );
+  // Consulta parametrizada: o termo é enviado separado do SQL, impedindo SQL injection
+  const { rows } = await pool.query('SELECT * FROM tarefas WHERE titulo ILIKE $1 ORDER BY id', [
+    `%${termo}%`,
+  ]);
   res.json({ tarefas: rows });
 });
 
