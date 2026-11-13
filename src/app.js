@@ -21,6 +21,15 @@ app.get('/api/tarefas', async (req, res) => {
   res.json({ tarefas: rows, resumo: resumir(rows) });
 });
 
+// Busca tarefas pelo título (GET /api/tarefas/busca?q=texto)
+app.get('/api/tarefas/busca', async (req, res) => {
+  const termo = String(req.query.q || '');
+  const { rows } = await pool.query(
+    "SELECT * FROM tarefas WHERE titulo ILIKE '%" + termo + "%' ORDER BY id",
+  );
+  res.json({ tarefas: rows });
+});
+
 app.post('/api/tarefas', async (req, res) => {
   const { valido, erros } = validarTarefa(req.body);
   if (!valido) {

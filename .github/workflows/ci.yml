@@ -1,68 +1,137 @@
-# Pipeline de Integração Contínua (CI) da aplicação web
-# Sequência: Pull Request -> Análise estática/formatação -> Build -> Testes -> Imagem Docker
-name: CI - Aplicacao Web
+# Pipeline de Integração Contínua (CI) - API REST de tarefas (Node.js + Express + PostgreSQL)
+#
+# Sequência:
+#   Pull Request
+#     -> [ Análise estática de código | Análise de formatação | Análise estática de segurança ]  (em paralelo)
+#     -> Build -> Testes unitários -> Testes de integração -> Criação da imagem Docker
+name: CI - API de Tarefas
 
-# ETAPA 1 - GATILHO: roda a cada Pull Request aberto/atualizado para a main
+# GATILHO: todo Pull Request aberto/atualizado para a main
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
 
-# Cancela execuções antigas do mesmo PR quando chega um commit novo
+# Cancela a execução anterior do mesmo PR quando chega um commit novo
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
   contents: read
-  packages: write # necessário para publicar a imagem no ghcr.io
+
+env:
+  NODE_VERSION: 22
 
 jobs:
-  # ETAPA 2 - ANÁLISE ESTÁTICA E DE FORMATAÇÃO
-  analise-estatica:
-    name: 1. Analise estatica e formatacao
+  # 1) ANÁLISE ESTÁTICA DE CÓDIGO
+  lint:
+    name: 1. Analise estatica de codigo (ESLint)
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar o codigo
-        uses: actions/checkout@v4
-      - name: Instalar Node.js 20 (com cache do npm)
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Instalar dependencias
         run: npm ci
-      - name: Analise estatica (ESLint)
+      - name: ESLint
         run: npm run lint
-      - name: Verificar formatacao (Prettier)
-        run: npm run format:check
 
-  # ETAPA 3 - BUILD (só roda se a análise passar)
-  build:
-    name: 2. Build
-    needs: analise-estatica
+  # 2) ANÁLISE DE FORMATAÇÃO
+  formatacao:
+    name: 2. Analise de formatacao (Prettier)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Prettier (somente verificacao)
+        run: npm run format:check
+
+  # 3) ANÁLISE ESTÁTICA DE SEGURANÇA (SAST + dependências)
+  seguranca:
+    name: 3. Analise estatica de seguranca (Semgrep + npm audit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # publicar o resultado na aba Security do GitHub
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Instalar Semgrep
+        run: pipx install semgrep
+      - name: SAST com Semgrep (falha em vulnerabilidades de severidade alta)
+        run: >
+          semgrep scan
+          --config p/javascript --config p/nodejs --config p/expressjs --config p/secrets
+          --severity ERROR --error --metrics off
+          --sarif-output semgrep.sarif
+      - name: Publicar resultado na aba Security
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+      - name: Auditoria de dependencias vulneraveis (npm audit)
+        run: npm audit --audit-level=high
+
+  # 4) BUILD (só roda se as três análises passarem)
+  build:
+    name: 4. Build
+    needs: [lint, formatacao, seguranca]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Instalar dependencias
         run: npm ci
       - name: Gerar build (dist/)
         run: npm run build
       - name: Publicar artefato do build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dist
           path: dist/
           retention-days: 7
 
-  # ETAPA 4 - TESTES UNITÁRIOS E DE INTEGRAÇÃO (só roda se o build passar)
-  testes:
-    name: 3. Testes unitarios e de integracao
+  # 5) TESTES UNITÁRIOS
+  testes-unitarios:
+    name: 5. Testes unitarios
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Jest (com cobertura)
+        run: npm run test:unit
+      - name: Publicar relatorio de cobertura
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cobertura
+          path: coverage/
+
+  # 6) TESTES DE INTEGRAÇÃO (API REST + banco PostgreSQL real)
+  testes-integracao:
+    name: 6. Testes de integracao (API + PostgreSQL)
+    needs: testes-unitarios
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -80,36 +149,36 @@ jobs:
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/app_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - name: Instalar dependencias
         run: npm ci
       - name: Baixar artefato do build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dist
           path: dist/
-      - name: Testes unitarios (com cobertura)
-        run: npm run test:unit
-      - name: Testes de integracao (API + PostgreSQL)
+      - name: Jest + Supertest contra o PostgreSQL
         run: npm run test:integration
-      - name: Publicar relatorio de cobertura
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cobertura
-          path: coverage/
+      - name: Smoke test do build (sobe dist/server.js e chama /health)
+        run: |
+          PORT=3000 node dist/server.js &
+          sleep 3
+          curl --fail --silent http://localhost:3000/health
 
-  # ETAPA 5 - CRIAR IMAGEM DOCKER (só roda se todos os testes passarem)
+  # 7) CRIAÇÃO DA IMAGEM DOCKER (só roda se todos os testes passarem)
   imagem:
-    name: 4. Criar imagem Docker
-    needs: testes
+    name: 7. Criacao da imagem Docker
+    needs: testes-integracao
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # publicar no GitHub Container Registry
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login no GitHub Container Registry

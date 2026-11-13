@@ -8,7 +8,7 @@ await build({
   entryPoints: ['src/server.js'],
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   outfile: 'dist/server.js',
   minify: true,
   external: ['pg-native'],
