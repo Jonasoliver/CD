@@ -1,0 +1,137 @@
+# Pipeline de Integração Contínua (CI) da aplicação web
+# Sequência: Pull Request -> Análise estática/formatação -> Build -> Testes -> Imagem Docker
+name: CI - Aplicacao Web
+
+# ETAPA 1 - GATILHO: roda a cada Pull Request aberto/atualizado para a main
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+# Cancela execuções antigas do mesmo PR quando chega um commit novo
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write # necessário para publicar a imagem no ghcr.io
+
+jobs:
+  # ETAPA 2 - ANÁLISE ESTÁTICA E DE FORMATAÇÃO
+  analise-estatica:
+    name: 1. Analise estatica e formatacao
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+      - name: Instalar Node.js 20 (com cache do npm)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Analise estatica (ESLint)
+        run: npm run lint
+      - name: Verificar formatacao (Prettier)
+        run: npm run format:check
+
+  # ETAPA 3 - BUILD (só roda se a análise passar)
+  build:
+    name: 2. Build
+    needs: analise-estatica
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Gerar build (dist/)
+        run: npm run build
+      - name: Publicar artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # ETAPA 4 - TESTES UNITÁRIOS E DE INTEGRAÇÃO (só roda se o build passar)
+  testes:
+    name: 3. Testes unitarios e de integracao
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/app_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci
+      - name: Baixar artefato do build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Testes unitarios (com cobertura)
+        run: npm run test:unit
+      - name: Testes de integracao (API + PostgreSQL)
+        run: npm run test:integration
+      - name: Publicar relatorio de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura
+          path: coverage/
+
+  # ETAPA 5 - CRIAR IMAGEM DOCKER (só roda se todos os testes passarem)
+  imagem:
+    name: 4. Criar imagem Docker
+    needs: testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login no GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Gerar tags da imagem
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=pr
+            type=sha
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
