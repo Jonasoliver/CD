@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lista de Tarefas</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Lista de Tarefas</h1>
+      <form id="form">
+        <input id="titulo" placeholder="Nova tarefa" required maxlength="100" />
+        <select id="prioridade">
+          <option value="baixa">Baixa</option>
+          <option value="media" selected>Média</option>
+          <option value="alta">Alta</option>
+        </select>
+        <button type="submit">Adicionar</button>
+      </form>
+      <p id="resumo"></p>
+      <ul id="lista"></ul>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

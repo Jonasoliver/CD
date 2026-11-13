@@ -1,0 +1,30 @@
+{
+  "name": "ci-github-actions",
+  "version": "1.0.0",
+  "description": "Aplicação web de exemplo (lista de tarefas) para demonstrar CI com GitHub Actions",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node dist/server.js",
+    "lint": "eslint . --max-warnings=0",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "build": "node scripts/build.mjs",
+    "test:unit": "jest tests/unit --coverage",
+    "test:integration": "jest tests/integration --runInBand"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.3.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "jest": "^30.5.2",
+    "prettier": "^3.10.1",
+    "supertest": "^7.3.2"
+  }
+}
