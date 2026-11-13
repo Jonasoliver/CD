@@ -52,4 +52,12 @@ describe('API de tarefas', () => {
     const res = await request(app).patch('/api/tarefas/999/concluir');
     expect(res.status).toBe(404);
   });
+
+  test('DELETE remove a tarefa do banco', async () => {
+    await request(app).post('/api/tarefas').send({ titulo: 'Apagar' });
+    const res = await request(app).delete('/api/tarefas/1');
+    expect(res.status).toBe(204);
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM tarefas');
+    expect(rows[0].n).toBe(0);
+  });
 });
